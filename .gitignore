@@ -1,0 +1,20 @@
+# Ignore Python cache and virtual env
+__pycache__/
+*.pyc
+venv/
+
+# Ignore logs
+*.log
+
+# Ignore OS files
+.DS_Store
+# LaTeX auxiliary files
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
