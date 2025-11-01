@@ -1,0 +1,220 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{siunitx}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\title{Reconstruction from Non-Uniform  Samples\\Using a DCT-\textit{p} Prior}
+\author{Vinay \\ SR NO.: 23653}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This report describes an optimization-based method to restore grayscale images from sparse, noisy pixel measurements. The approach enforces sparsity in the Discrete Cosine Transform domain via a nonconvex \(\ell_p\)-style penalty with \(0<p<1\). A Majorization-Minimization (MM) routine converts the problem into a sequence of weighted quadratic subproblems. Each subproblem is solved by Preconditioned Conjugate Gradients (PCG). We present the derivation, implementation details, and numerical results on standard test images across multiple sampling ratios and hyperparameters.
+\end{abstract}
+
+\section{Introduction}
+Reconstructing images from incomplete observations is central to many imaging tasks. When only a subset of pixels are available and measurements are noisy, the inverse problem is ill-posed. A common remedy is to impose a prior. Natural images are approximately sparse in transform domains such as the DCT. We exploit this by penalizing DCT coefficients with an \(\ell_p\)-type penalty for \(0<p<1\). The overall objective balances data fidelity at sampled pixels with a sparsity-promoting regularizer in the DCT domain.
+
+\section{Model and algorithm}
+Let \(x^\star\in\mathbb{R}^N\) denote the vectorized true image and \(m\in\mathbb{R}^M\) the observed sampled pixels. The measurements follow
+\[
+m = W x^\star + \eta,
+\]
+where \(W\) extracts sampled pixels and \(\eta\) is additive Gaussian noise. We minimize
+\[
+J(x) = \|W x - m\|_2^2
++ \lambda \sum_{i=1}^{N} \big(\varepsilon + y_i^2\big)^p,
+\qquad y = \mathrm{DCT}(x),
+\]
+with \(0<p<1\) and small \(\varepsilon>0\).
+
+Because the \((\varepsilon + t)^p\) term is concave in \(t\) for \(0<p<1\), we majorize it using a tangent-line bound at the current iterate. Denote the DCT coefficients at iteration \(k\) by \(y^{(k)}\). The surrogate becomes a weighted quadratic in \(x\):
+\[
+Q(x\mid x^{(k)}) = \|W x - m\|_2^2 + \lambda \sum_i w_i^{(k)} y_i^2 + \text{const},
+\]
+where the weights
+\[
+w_i^{(k)} = p (\varepsilon + (y_i^{(k)})^2)^{\,p-1}
+\]
+are updated each MM step. Setting \(\nabla_x Q=0\) yields a linear system of the form
+\[
+\big(W^\top W + \lambda\,\mathrm{IDCT}\,\mathrm{diag}(w^{(k)})\,\mathrm{DCT}\big)x = W^\top m.
+\]
+We solve this system using PCG with a diagonal (Jacobi) preconditioner for efficiency.
+
+\section{Implementation details}
+The algorithm was implemented in Python using NumPy and SciPy. Key points:
+\begin{itemize}
+  \item Images were treated as \(256\times 256\) grayscale arrays normalized to \([0,1]\).
+  \item Random sampling masks were generated for sampling ratios \(r\in\{0.1,\,0.2,\,0.3,\,0.5\}\).
+  \item Additive Gaussian noise was scaled to obtain 30\,dB SNR on the sampled pixels.
+  \item Parameters swept: \(p\in\{0.3,0.4,0.5\}\), and \(\lambda\in\{10^{-4},10^{-3},10^{-2},10^{-1},1\}\).
+  \item Each MM iteration recomputes weights, assembles the operator via DCT/IDCT and calls PCG.
+\end{itemize}
+
+\section{Experimental setup}
+We ran experiments on two standard test images: \textit{Cameraman} and \textit{Lena}. For each image and sampling ratio:
+\begin{enumerate}
+  \item Create a random binary sampling mask with fraction \(r\) of pixels observed.
+  \item Form noisy observations at the sampled pixels with target SNR \(=30\) dB.
+  \item Run MM until convergence or until a maximum number of iterations.
+  \item Record PSNR, \(\ell_2\) relative error and wall-clock time.
+\end{enumerate}
+
+\section{Results}
+
+\subsection{Cameraman}
+Table~\ref{tab:cameraman} summarizes best results (best \(\lambda\) per \((r,p)\)). Visual examples and diagnostics for the best case at \(r=0.5\), \(p=0.5\) are in Figures~\ref{fig:cam-vis} and~\ref{fig:cam-diag}.
+
+\begin{table}[H]
+  \centering
+  \caption{Cameraman: best reconstruction metrics for each \((r,p)\).}
+  \label{tab:cameraman}
+  \sisetup{table-format=1.2}
+  \begin{tabular}{cccccc}
+    \toprule
+    $r$ & $p$ & Best $\lambda$ & Best PSNR (dB) & Rel.\ Error (\(\ell_2\)) & Time (s) \\
+    \midrule
+    0.1 & 0.3 & 0.1  & 17.40 & 0.2548 & 4.37 \\
+    0.1 & 0.4 & 0.1  & 18.51 & 0.2243 & 3.54 \\
+    0.1 & 0.5 & 0.1  & 18.57 & 0.2226 & 3.39 \\
+    0.2 & 0.3 & 0.1  & 19.14 & 0.2084 & 3.50 \\
+    0.2 & 0.4 & 0.1  & 20.34 & 0.1816 & 3.50 \\
+    0.2 & 0.5 & 0.1  & 20.38 & 0.1807 & 3.44 \\
+    0.3 & 0.3 & 0.1  & 20.50 & 0.1783 & 3.28 \\
+    0.3 & 0.4 & 0.1  & 21.61 & 0.1569 & 3.59 \\
+    0.3 & 0.5 & 0.01 & 21.83 & 0.1529 & 3.45 \\
+    0.5 & 0.3 & 0.01 & 23.45 & 0.1269 & 3.63 \\
+    0.5 & 0.4 & 0.01 & 24.56 & 0.1117 & 3.89 \\
+    0.5 & 0.5 & 0.01 & 24.88 & 0.1077 & 3.36 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[b]{0.31\textwidth}
+    \includegraphics[width=\linewidth]{visuals.png}
+    \caption{Original}
+  \end{subfigure}\quad
+  \begin{subfigure}[b]{0.31\textwidth}
+    \includegraphics[width=\linewidth]{visuals.png}
+    \caption{Sampled (r=0.5)}
+  \end{subfigure}\quad
+  \begin{subfigure}[b]{0.31\textwidth}
+    \includegraphics[width=\linewidth]{visuals.png}
+    \caption{Reconstruction}
+  \end{subfigure}
+  \caption{Cameraman example (best case at \(r=0.5,\ p=0.5\)).}
+  \label{fig:cam-vis}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{visuals.png}
+  \caption{Diagnostic plots for the Cameraman best case: PSNR vs.\ \(\lambda\), objective decay, residual map, DCT histogram, relative change, and PCG iterations.}
+  \label{fig:cam-diag}
+\end{figure}
+
+\subsection{Lena}
+Table~\ref{tab:lena} lists the best-performing \(\lambda\) and metrics for different \((r,p)\). Representative images and diagnostics for \(r=0.5,\ p=0.5\) appear in Figures~\ref{fig:lena-vis} and~\ref{fig:lena-diag}.
+
+\begin{table}[H]
+  \centering
+  \caption{Lena: best reconstruction metrics for each \((r,p)\).}
+  \label{tab:lena}
+  \begin{tabular}{cccccc}
+    \toprule
+    $r$ & $p$ & Best $\lambda$ & Best PSNR (dB) & Rel.\ Error (\(\ell_2\)) & Time (s) \\
+    \midrule
+    0.1 & 0.4 & 0.1  & 19.48 & 0.2262 & 3.65 \\
+    0.1 & 0.5 & 0.1  & 19.43 & 0.2275 & 3.69 \\
+    0.2 & 0.3 & 0.1  & 20.54 & 0.2003 & 3.40 \\
+    0.2 & 0.4 & 0.1  & 21.63 & 0.1766 & 3.67 \\
+    0.2 & 0.5 & 0.01 & 22.10 & 0.1673 & 4.03 \\
+    0.3 & 0.3 & 0.1  & 22.10 & 0.1673 & 4.03 \\
+    0.3 & 0.4 & 0.01 & 23.59 & 0.1409 & 4.06 \\
+    0.3 & 0.5 & 0.01 & 23.59 & 0.1409 & 4.06 \\
+    0.5 & 0.3 & 0.01 & 25.93 & 0.1076 & 4.26 \\
+    0.5 & 0.4 & 0.01 & 26.72 & 0.0983 & 5.07 \\
+    0.5 & 0.5 & 0.01 & 27.08 & 0.0943 & 3.72 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[b]{0.31\textwidth}
+    \includegraphics[width=\linewidth]{diagnostic_plots.png}
+    \caption{Original}
+  \end{subfigure}\quad
+  \begin{subfigure}[b]{0.31\textwidth}
+    \includegraphics[width=\linewidth]{psnr_vs_lambda_plot.png}
+    \caption{Sampled (r=0.5)}
+  \end{subfigure}\quad
+  \begin{subfigure}[b]{0.31\textwidth}
+    \includegraphics[width=\linewidth]{results_table.png}
+    \caption{Reconstruction}
+  \end{subfigure}
+  \caption{Lena example (best case at \(r=0.5,\ p=0.5\)).}
+  \label{fig:lena-vis}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{visuals.png}
+  \caption{Diagnostic plots for the Lena best case.}
+  \label{fig:lena-diag}
+\end{figure}
+
+\section{Discussion}
+\subsection{Sampling fraction}
+The amount of sampled data is the primary determinant of recovery quality. As the sampling ratio \(r\) increases, PSNR improves steadily. This is expected because more direct measurements reduce ambiguity.
+
+\subsection{Sparsity exponent \(p\)}
+Larger \(p\) values (closer to 1) lead to milder sparsity enforcement. Empirically this often improved PSNR and preserved subtle textures. Very small \(p\) values can over-suppress moderate DCT coefficients and harm detail.
+
+\subsection{Regularization strength \(\lambda\)}
+When measured data are scarce, stronger regularization (larger \(\lambda\)) is beneficial. With more samples, a smaller \(\lambda\) lets the algorithm fit observed pixels more closely while relying less on the prior.
+
+\subsection{Convergence and artifacts}
+The MM-PCG scheme converges reliably in a few dozen iterations for the settings used. Sparsity-based priors can introduce small artifacts while filling unobserved regions. These are visible in residual maps and high-frequency DCT bins.
+
+\section{Conclusion}
+We implemented and tested an MM-based solver that enforces DCT-domain sparsity using a nonconvex \(\ell_p\)-style prior. Results on two benchmark images show that reconstruction improves with sampling rate, that moderate \(p\) (e.g., 0.5) is often preferable, and that the optimal \(\lambda\) depends on data availability. The approach is computationally efficient when each MM subproblem is solved with PCG and a simple preconditioner.
+
+\appendix
+\section{Implementation notes and code}
+A concise, runnable Python implementation is available as an appendix or separate file. The critical routines are:
+\begin{itemize}
+  \item \texttt{calculate\_psnr}, \texttt{calculate\_rel\_error}
+  \item \texttt{create\_random\_mask}, \texttt{add\_snr\_noise}
+  \item \texttt{apply\_M\_operator} (DCT/IDCT wrapper)
+  \item \texttt{preconditioned\_cg} (PCG solver)
+  \item \texttt{run\_reconstruction} (MM loop)
+\end{itemize}
+
+\subsection*{Including the full script}
+If you want the Python script included verbatim in the PDF, save it to a file and include with:
+\begin{verbatim}
+\lstinputlisting[language=Python,breaklines=true]{mm_pcg_experiments.py}
+\end{verbatim}
+Replace \texttt{mm\_pcg\_experiments.py} with the actual filename.
+
+\section*{Acknowledgements}
+This document is a reworded transcription and reformatting of the user's original report and code. For reference see the original PDF supplied. :contentReference[oaicite:1]{index=1}
+
+\end{document}
