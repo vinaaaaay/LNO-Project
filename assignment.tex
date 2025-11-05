@@ -3,7 +3,8 @@
 \usepackage[utf8]{inputenc}
 \usepackage{microtype}
 \usepackage{graphicx}
-\usepackage{amsmath,amssymb}
+\usepackage{amsmath, amssymb, mathtools} 
+\usepackage{bm} 
 \usepackage{booktabs}
 \usepackage{caption}
 \usepackage{subcaption}
@@ -12,6 +13,7 @@
 \usepackage{listings}
 \usepackage{siunitx}
 \usepackage{geometry}
+\usepackage{xcolor}  
 \usepackage[table,xcdraw]{xcolor} 
 \usepackage{minted}
 \geometry{margin=1in}
@@ -30,32 +32,122 @@ This report describes an optimization-based method to restore grayscale images f
 \section{Introduction}
 Reconstructing images from incomplete observations is central to many imaging tasks. When only a subset of pixels are available and measurements are noisy, the inverse problem is ill-posed. A common remedy is to impose a prior. Natural images are approximately sparse in transform domains such as the DCT. We exploit this by penalizing DCT coefficients with an \(\ell_p\)-type penalty for \(0<p<1\). The overall objective balances data fidelity at sampled pixels with a sparsity-promoting regularizer in the DCT domain.
 
-\section{Model and algorithm}
-Let \(x^\star\in\mathbb{R}^N\) denote the vectorized true image and \(m\in\mathbb{R}^M\) the observed sampled pixels. The measurements follow
-\[
-m = W x^\star + \eta,
-\]
-where \(W\) extracts sampled pixels and \(\eta\) is additive Gaussian noise. We minimize
-\[
-J(x) = \|W x - m\|_2^2
-+ \lambda \sum_{i=1}^{N} \big(\varepsilon + y_i^2\big)^p,
-\qquad y = \mathrm{DCT}(x),
-\]
-with \(0<p<1\) and small \(\varepsilon>0\).
+\section{Method and Detailed Derivation}
 
-Because the \((\varepsilon + t)^p\) term is concave in \(t\) for \(0<p<1\), we majorize it using a tangent-line bound at the current iterate. Denote the DCT coefficients at iteration \(k\) by \(y^{(k)}\). The surrogate becomes a weighted quadratic in \(x\):
+\paragraph{Model.}
+Let $x^\star\in\mathbb{R}^N$ be the vectorized ground-truth image and let $W\in\mathbb{R}^{M\times N}$ be the sampling operator that extracts the $M$ observed pixels. The noisy measurements are
+\begin{equation}
+m = W x^\star + \eta,\qquad \eta\sim\mathcal{N}(0,\sigma^2 I).
+\end{equation}
+Let $C\in\mathbb{R}^{N\times N}$ denote the orthonormal DCT matrix (``ortho'' normalization), so that $y = Cx=\mathrm{DCT}(x)$ and $C^\top C=I$ with $\mathrm{IDCT}=C^\top$.
+We estimate $x$ by minimizing
+\begin{equation}
+\label{eq:objective}
+J(x)\;=\;\underbrace{\|W x - m\|_2^2}_{\text{data term}}
+\;+\;\lambda\sum_{i=1}^{N} \phi\!\big(y_i^2\big),
+\qquad y=Cx,
+\quad \phi(t)=(\varepsilon+t)^p,
+\end{equation}
+with $0<p<1$ and $\varepsilon>0$ small.
+
+\paragraph{Concavity and a tangent majorizer.}
+For $0<p<1$,
 \[
-Q(x\mid x^{(k)}) = \|W x - m\|_2^2 + \lambda \sum_i w_i^{(k)} y_i^2 + \text{const},
+\phi'(t)=p(\varepsilon+t)^{p-1},\qquad
+\phi''(t)=p(p-1)(\varepsilon+t)^{p-2}\le 0\quad\text{for } t\ge 0,
 \]
-where the weights
+so $\phi$ is concave on $[0,\infty)$. By concavity, for any $s\ge 0$,
+\begin{equation}
+\label{eq:tangent-bound}
+\phi(t)\;\le\;\phi(s)+\phi'(s)\,(t-s)\qquad\text{(first-order tangent upper bound)}.
+\end{equation}
+At MM iteration $k$, let $y^{(k)}=Cx^{(k)}$ and choose $s_i=(y_i^{(k)})^2$ in \eqref{eq:tangent-bound} with $t=y_i^2$:
+\begin{equation}
+\phi\!\big(y_i^2\big)
+\;\le\; \phi\!\big((y_i^{(k)})^2\big)
++ \underbrace{\phi'\!\big((y_i^{(k)})^2\big)}_{\,\displaystyle w_i^{(k)}}\,
+\Big(y_i^2-(y_i^{(k)})^2\Big),
+\qquad
+w_i^{(k)} = p\big(\varepsilon+(y_i^{(k)})^2\big)^{p-1}\ge 0.
+\end{equation}
+Summing over $i$ and discarding terms independent of $x$ yields the quadratic surrogate
+\begin{equation}
+\label{eq:surrogate}
+Q(x\mid x^{(k)}) \;=\; \|W x-m\|_2^2 \;+\; \lambda \sum_{i=1}^N w_i^{(k)}\, y_i^2
+\;=\; \|W x-m\|_2^2 \;+\; \lambda\, x^\top C^\top \!\big(\mathrm{diag}(w^{(k)})\big) C\,x.
+\end{equation}
+By construction, $Q(x^{(k)}\mid x^{(k)})=J(x^{(k)})$ and $J(x)\le Q(x\mid x^{(k)})+\text{const}$, so minimizing $Q$ guarantees descent of $J$.
+
+\paragraph{Normal equations of the surrogate.}
+Differentiate \eqref{eq:surrogate} and set the gradient to zero:
+\begin{align}
+\nabla_x Q(x\mid x^{(k)}) 
+&= 2W^\top(Wx-m) \;+\; 2\lambda\, C^\top \mathrm{diag}(w^{(k)}) C\,x \;=\;0,\\[2pt]
+\Longrightarrow\qquad
+\label{eq:linear-system}
+\boxed{\;\Big(W^\top W \;+\; \lambda\,C^\top \mathrm{diag}(w^{(k)}) C\Big)\,x \;=\; W^\top m.\;}
+\end{align}
+Using $\mathrm{IDCT}=C^\top$ and $\mathrm{DCT}=C$,
+\begin{equation}
+\label{eq:spatial-operator}
+\Big(W^\top W \;+\; \lambda\,\mathrm{IDCT}\,\mathrm{diag}(w^{(k)})\,\mathrm{DCT}\Big)\,x \;=\; W^\top m.
+\end{equation}
+The coefficient matrix is symmetric positive definite (SPD): $W^\top W\succeq 0$, $\mathrm{diag}(w^{(k)})\succeq 0$, and $C$ is orthonormal, hence the sum is SPD whenever either $W$ samples any pixel or some weight is strictly positive. Therefore PCG is applicable.
+
+\paragraph{Matrix–free application of the system matrix.}
+Let $A_k \coloneqq W^\top W + \lambda C^\top\!\mathrm{diag}(w^{(k)})C$. For any $z\in\mathbb{R}^N$,
+\begin{equation}
+\label{eq:Ak-action}
+A_k z \;=\; W^\top W z \;+\; \lambda\, C^\top\!\big(\,w^{(k)} \odot (Cz)\,\big),
+\end{equation}
+where $\odot$ is elementwise multiplication. In image-space code this is
 \[
-w_i^{(k)} = p (\varepsilon + (y_i^{(k)})^2)^{\,p-1}
+z \;\mapsto\; \underbrace{W^\top(Wz)}_{\text{mask}\cdot z}
+\;+\;\lambda\,\mathrm{IDCT}\!\Big(\,w^{(k)} \odot \mathrm{DCT}(z)\,\Big),
 \]
-are updated each MM step. Setting \(\nabla_x Q=0\) yields a linear system of the form
+which matches the routine \texttt{apply\_M\_operator}.
+
+\paragraph{Jacobi preconditioning.}
+Let $\alpha_k \coloneqq \max_i w_i^{(k)}$. Since $0\le \mathrm{diag}(w^{(k)}) \preceq \alpha_k I$,
+\begin{equation}
+C^\top\mathrm{diag}(w^{(k)})C \;\preceq\; \alpha_k\, C^\top I C \;=\; \alpha_k I.
+\end{equation}
+Thus a cheap diagonal upper bound for $A_k$ is
+\begin{equation}
+P_k \;\coloneqq\; \underbrace{\mathrm{diag}(W^\top W)}_{\text{mask in }\{0,1\}}
+\;+\; \lambda\,\alpha_k I,
+\end{equation}
+i.e., elementwise \(\big(P_k\big)_j = (\text{mask})_j + \lambda\,\alpha_k\).
+This is exactly the Jacobi preconditioner used in code:
 \[
-\big(W^\top W + \lambda\,\mathrm{IDCT}\,\mathrm{diag}(w^{(k)})\,\mathrm{DCT}\big)x = W^\top m.
+r=b-A_k x,\qquad z=P_k^{-1} r,
 \]
-We solve this system using PCG with a diagonal (Jacobi) preconditioner for efficiency.
+with standard PCG recurrences.
+
+\paragraph{MM–PCG algorithm.}
+Given $x^{(0)}$ (e.g., zero-filled or the masked data), iterate for $k=0,1,2,\dots$
+\begin{enumerate}
+\item Compute $y^{(k)}=Cx^{(k)}$ and weights
+\(
+w^{(k)}_i=p\big(\varepsilon+(y^{(k)}_i)^2\big)^{p-1}.
+\)
+\item Form the linear system \eqref{eq:linear-system} implicitly via the operator \eqref{eq:Ak-action}.
+\item Solve $A_k x^{(k+1)}=W^\top m$ with PCG, preconditioned by $P_k$, to tolerance $\texttt{cg\_tol}$ or a cap of $\texttt{max\_cg\_iter}$.
+\item Stop the outer loop when
+\(
+\frac{\|x^{(k+1)}-x^{(k)}\|_2}{\|x^{(k)}\|_2} < \texttt{mm\_tol}
+\)
+or when $k$ reaches $\texttt{max\_mm\_iter}$.
+\end{enumerate}
+Each MM step strictly decreases $J$ unless already at a fixed point of the surrogate. At convergence, the KKT conditions of \eqref{eq:objective} are satisfied.
+
+\paragraph{Connection to the implementation.}
+\begin{itemize}
+\item Weight update: \(\;w^{(k)} \leftarrow p(\varepsilon + (\mathrm{DCT}(x^{(k)}))^2)^{p-1}\).
+\item System application: \(\;z\mapsto \text{mask}\cdot z + \lambda\,\mathrm{IDCT}\!\big(w^{(k)}\odot \mathrm{DCT}(z)\big)\).
+\item Preconditioner: \(\;P_k = \text{mask} + \lambda \max_i w_i^{(k)}\) (elementwise), with safeguard $P_{k,j}\leftarrow \max(P_{k,j},\,10^{-6})$.
+\end{itemize}
+
 
 \section{Implementation details}
 The algorithm was implemented in Python using NumPy and SciPy. Key points:
