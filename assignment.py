@@ -276,7 +276,7 @@ if __name__ == '__main__':
     
     # --- 1. Define All Experiment Parameters ---
     
-    IMAGE_PATH = 'cameraman.tif' 
+    IMAGE_PATH = 'images/lena.png' 
     EPSILON = 1e-6
     MM_TOL = 1e-4
     MAX_MM_ITER = 50 # Set a fixed number for consistent timing
