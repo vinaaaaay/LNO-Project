@@ -18,3 +18,4 @@ venv/
 *.blg
 *.fls
 *.fdb_latexmk
+_minted
